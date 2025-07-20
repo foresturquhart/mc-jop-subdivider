@@ -1,6 +1,7 @@
 package main
 
 import (
+	"compress/gzip"
 	"flag"
 	"fmt"
 	"image"
@@ -9,96 +10,99 @@ import (
 	_ "image/png"
 	"log"
 	"os"
+	"path/filepath"
+	"time"
 
+	"github.com/Tnze/go-mc/nbt"
+	"github.com/google/uuid"
 	"golang.org/x/image/bmp"
 )
 
-// tileSize defines an allowed tile in unit and pixel dimensions
-type tileSize struct {
-	wUnits, hUnits int // in 16px units
-	wPx, hPx       int // in pixels
-}
-
-var tileSizes = []tileSize{
-	// Sorted by area (units) descending -> bigger first
-	{4, 4, 64, 64}, // 64x64
-	{3, 4, 48, 64}, // 48x64
-	{4, 3, 64, 48}, // 64x48
-	{3, 3, 48, 48}, // 48x48
-	{4, 2, 64, 32}, // 64x32
-	{2, 2, 32, 32}, // 32x32
-	{2, 1, 32, 16}, // 32x16
-	{1, 2, 16, 32}, // 16x32
-	{1, 1, 16, 16}, // 16x16
+// Allowed tile sizes (pixels) and their corresponding Joy of Painting "ct" values
+// Ordered largest-first to maximize use of big canvases
+var canvasTypes = []struct {
+	w, h int
+	ct   byte
+}{
+	{32, 32, 1}, // LARGE (area=1024)
+	{32, 16, 2}, // LONG  (area=512)
+	{16, 32, 3}, // TALL  (area=512)
+	{16, 16, 0}, // SMALL (area=256)
 }
 
 func main() {
-	// Parse flags
+	// CLI flags
 	inputPath := flag.String("input", "", "Path to input image (bmp, png, jpeg)")
-	outDir := flag.String("out", "tiles", "Output directory for tiles")
+	author := flag.String("author", "Unknown", "Author name for .paint files")
+	title := flag.String("title", "Untitled", "Title for .paint files")
+	outDir := flag.String("out", "tiles", "Output directory for tiles and .paint files")
 	flag.Parse()
 
 	if *inputPath == "" {
 		log.Fatal("Missing input file: use -input <path>")
 	}
 
-	// Open input file
+	// Open and decode source image
 	f, err := os.Open(*inputPath)
 	if err != nil {
 		log.Fatalf("Failed to open input image: %v", err)
 	}
 	defer f.Close()
-
-	// Decode image
-	img, format, err := image.Decode(f)
+	img, _, err := image.Decode(f)
 	if err != nil {
 		log.Fatalf("Failed to decode image: %v", err)
 	}
-	log.Printf("Decoded image format: %s", format)
 
+	// Bounds and divisibility check
 	bounds := img.Bounds()
-	width, height := bounds.Dx(), bounds.Dy()
-	if width > 512 || height > 512 {
-		log.Fatalf("Image dimensions exceed 512x512: got %dx%d", width, height)
-	}
-	// Check divisibility by 16
-	if width%16 != 0 || height%16 != 0 {
-		log.Fatalf("Image dimensions must be multiples of 16: got %dx%d", width, height)
+	w, h := bounds.Dx(), bounds.Dy()
+	if w%16 != 0 || h%16 != 0 {
+		log.Fatalf("Image dimensions must be multiples of 16: got %dx%d", w, h)
 	}
 
-	cols := width / 16
-	rows := height / 16
+	cols, rows := w/16, h/16
 
-	// occupancy grid: false = free, true = filled
+	// occupancy grid
 	occ := make([][]bool, rows)
 	for i := range occ {
 		occ[i] = make([]bool, cols)
 	}
 
-	// Create output directory if not exists
+	// Prepare output directory
 	err = os.MkdirAll(*outDir, 0755)
 	if err != nil {
-		log.Fatalf("Failed to create output directory: %v", err)
+		log.Fatalf("Failed to create output dir: %v", err)
 	}
 
-	// Iterate over grid
+	// Prepare base UUID and ID counter
+	baseUUID := uuid.MustParse("d1ebe29f-f4e9-4572-83cd-8b2cdbfc2420").String()
+	baseID := time.Now().Unix()
+	counter := int64(0)
+
+	// Iterate over grid, greedy largest-first packing
 	for r := 0; r < rows; r++ {
 		for c := 0; c < cols; c++ {
 			if occ[r][c] {
-				continue // already filled
+				continue
 			}
-			// Find largest tile that fits
-			var chosen tileSize
+
+			// Select the largest fitting canvas
+			var sel struct {
+				wUnits, hUnits, wPx, hPx int
+				ct                       byte
+			}
 			found := false
-			for _, t := range tileSizes {
+			for _, can := range canvasTypes {
+				wUnits := can.w / 16
+				hUnits := can.h / 16
 				// Check bounds
-				if c+t.wUnits > cols || r+t.hUnits > rows {
+				if c+wUnits > cols || r+hUnits > rows {
 					continue
 				}
 				// Check occupancy
 				hit := false
-				for y := r; y < r+t.hUnits && !hit; y++ {
-					for x := c; x < c+t.wUnits; x++ {
+				for y := r; y < r+hUnits && !hit; y++ {
+					for x := c; x < c+wUnits; x++ {
 						if occ[y][x] {
 							hit = true
 							break
@@ -108,39 +112,77 @@ func main() {
 				if hit {
 					continue
 				}
-				// This tile fits
-				chosen = t
+				// Choose this canvas
+				sel = struct {
+					wUnits, hUnits, wPx, hPx int
+					ct                       byte
+				}{
+					wUnits, hUnits, can.w, can.h, can.ct,
+				}
 				found = true
 				break
 			}
 			if !found {
-				log.Fatalf("No tile fits at grid cell %d,%d", r, c)
+				log.Fatalf("No supported Joy-of-Painting canvas fits at %d,%d", r, c)
 			}
-			// Mark occupancy
-			for y := r; y < r+chosen.hUnits; y++ {
-				for x := c; x < c+chosen.wUnits; x++ {
+
+			// Mark occupied cells
+			for y := r; y < r+sel.hUnits; y++ {
+				for x := c; x < c+sel.wUnits; x++ {
 					occ[y][x] = true
 				}
 			}
-			// Crop subimage
-			x0 := c * 16
-			y0 := r * 16
-			sub := crop(img, x0, y0, chosen.wPx, chosen.hPx)
 
-			// Save as BMP
-			outPath := fmt.Sprintf("%s/tile_r%dc%d_%dx%d.bmp", *outDir, r, c, chosen.wPx, chosen.hPx)
-			outF, err := os.Create(outPath)
-			if err != nil {
-				log.Fatalf("Failed to create output file: %v", err)
+			// Crop and export subimage
+			x0, y0 := c*16, r*16
+			sub := crop(img, x0, y0, sel.wPx, sel.hPx)
+
+			base := filepath.Base(*inputPath)
+			nameBase := fmt.Sprintf("%s_%d_%d", trimExt(base), c, r)
+
+			// Write BMP
+			bmpFile, _ := os.Create(filepath.Join(*outDir, nameBase+".bmp"))
+			bmp.Encode(bmpFile, sub)
+			bmpFile.Close()
+
+			// Build a pixel array for .paint
+			pixels := make([]int32, sel.wPx*sel.hPx)
+			for yy := 0; yy < sel.hPx; yy++ {
+				for xx := 0; xx < sel.wPx; xx++ {
+					r, g, b, _ := sub.At(xx, yy).RGBA()
+					r8, g8, b8 := uint8(r>>8), uint8(g>>8), uint8(b>>8)
+					pixels[yy*sel.wPx+xx] = int32(0xFF<<24 | int(r8)<<16 | int(g8)<<8 | int(b8))
+				}
 			}
-			if err := bmp.Encode(outF, sub); err != nil {
-				outF.Close()
-				log.Fatalf("Failed to encode BMP: %v", err)
+
+			// Assemble NBT data
+			nbtData := map[string]interface{}{
+				"generation": int32(1),
+				"ct":         sel.ct,
+				"pixels":     pixels,
+				"v":          int32(2),
+				"author":     *author,
+				"title":      *title,
+				"name":       fmt.Sprintf("%s_%d", baseUUID, baseID+counter),
 			}
-			outF.Close()
-			log.Printf("Wrote tile: %s", outPath)
+			counter++
+
+			// Write .paint (NBT gzip)
+			pf, _ := os.Create(filepath.Join(*outDir, nameBase+".paint"))
+			gw := gzip.NewWriter(pf)
+			nbt.NewEncoder(gw).Encode(nbtData, "")
+			gw.Close()
+			pf.Close()
+
+			log.Printf("Exported %s (bmp + paint)", nameBase)
 		}
 	}
+}
+
+// trimExt removes the file extension
+func trimExt(fname string) string {
+	ext := filepath.Ext(fname)
+	return fname[:len(fname)-len(ext)]
 }
 
 // crop returns an RGBA subimage of given dimensions
