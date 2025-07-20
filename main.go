@@ -18,6 +18,9 @@ import (
 	"golang.org/x/image/bmp"
 )
 
+// UUID constant for Joy of Painting mod
+const paintingUUID = "d1ebe29f-f4e9-4572-83cd-8b2cdbfc2420"
+
 // Config holds CLI configuration and global naming parameters.
 type Config struct {
 	InputPath string
@@ -253,7 +256,7 @@ func exportTile(cfg Config, tile Tile, counter int64) error {
 		V:          2,
 		Author:     cfg.Author,
 		Title:      cfg.Title,
-		Name:       fmt.Sprintf("d1ebe29f-f4e9-4572-83cd-8b2cdbfc2420_%d", cfg.BaseID+counter),
+		Name:       fmt.Sprintf("%s_%d", paintingUUID, cfg.BaseID+counter),
 	}
 	paintPath := filepath.Join(cfg.OutDir, tile.FileBase+".paint")
 	if err := writePaint(paintPath, nbtData); err != nil {
