@@ -1,7 +1,6 @@
 package main
 
 import (
-	"compress/gzip"
 	"flag"
 	"fmt"
 	"image"
@@ -293,7 +292,7 @@ func writeBMP(path string, img image.Image) error {
 	return nil
 }
 
-// writePaint encodes and writes NBT data wrapped in gzip.
+// writePaint encodes and writes NBT data uncompressed.
 func writePaint(path string, data nbtDataStruct) error {
 	f, err := os.Create(path)
 	if err != nil {
@@ -301,9 +300,7 @@ func writePaint(path string, data nbtDataStruct) error {
 	}
 	defer f.Close()
 
-	gw := gzip.NewWriter(f)
-	defer gw.Close()
-	if err := nbt.NewEncoder(gw).Encode(data, ""); err != nil {
+	if err := nbt.NewEncoder(f).Encode(data, ""); err != nil {
 		return fmt.Errorf("encoding nbt: %w", err)
 	}
 	return nil
