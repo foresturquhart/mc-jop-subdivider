@@ -25,7 +25,6 @@ type Config struct {
 	Title     string
 	OutDir    string
 	NameRoot  string
-	BaseUUID  string
 	BaseID    int64
 }
 
@@ -53,13 +52,13 @@ type Tile struct {
 
 // nbtDataStruct defines the structure encoded into .paint files.
 type nbtDataStruct struct {
-	Generation int32   `nbt:"generation"`
-	CT         byte    `nbt:"ct"`
-	Pixels     []int32 `nbt:"pixels"`
-	V          int32   `nbt:"v"`
-	Author     string  `nbt:"author"`
-	Title      string  `nbt:"title"`
-	Name       string  `nbt:"name"`
+	Generation int32    `nbt:"generation"`
+	CT         byte     `nbt:"ct"`
+	Pixels     []uint32 `nbt:"pixels"`
+	V          int32    `nbt:"v"`
+	Author     string   `nbt:"author"`
+	Title      string   `nbt:"title"`
+	Name       string   `nbt:"name"`
 }
 
 func main() {
@@ -110,7 +109,6 @@ func parseFlags() Config {
 	author := flag.String("author", "Unknown", "Author name for .paint files")
 	title := flag.String("title", "Untitled", "Title for .paint files")
 	out := flag.String("out", "tiles", "Output directory for tiles and .paint files")
-	uuidBase := flag.String("uuid-base", "d1ebe29f-f4e9-4572-83cd-8b2cdbfc2420", "Base UUID for paint names")
 	flag.Parse()
 
 	if *input == "" {
@@ -126,7 +124,6 @@ func parseFlags() Config {
 		Title:     *title,
 		OutDir:    *out,
 		NameRoot:  nameRoot,
-		BaseUUID:  *uuidBase,
 		BaseID:    time.Now().UnixNano(),
 	}
 }
@@ -186,9 +183,9 @@ func MakeTilePlan(img image.Image, rows, cols int, nameRoot string) ([]Tile, err
 	occ := NewOccGrid(rows, cols)
 	var tiles []Tile
 
-	for r := 0; r < rows; r++ {
+	for r := range rows {
 		tileIndex := 0
-		for c := 0; c < cols; c++ {
+		for c := range cols {
 			if !occ.Empty(r, c, 1, 1) {
 				continue
 			}
@@ -234,16 +231,16 @@ func exportTile(cfg Config, tile Tile, counter int64) error {
 	// Build pixel data
 	h := tile.Img.Bounds().Dy()
 	w := tile.Img.Bounds().Dx()
-	pixels := make([]int32, w*h)
-	alpha := int32(0xFF) << 24
+	pixels := make([]uint32, w*h)
+	alpha := uint32(0xFF) << 24
 	idx := 0
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
+	for y := range h {
+		for x := range w {
 			r8, g8, b8, _ := tile.Img.At(x, y).RGBA()
 			pixels[idx] = alpha |
-				int32(uint8(r8>>8))<<16 |
-				int32(uint8(g8>>8))<<8 |
-				int32(uint8(b8>>8))
+				uint32(uint8(r8>>8))<<16 |
+				uint32(uint8(g8>>8))<<8 |
+				uint32(uint8(b8>>8))
 			idx++
 		}
 	}
@@ -256,7 +253,7 @@ func exportTile(cfg Config, tile Tile, counter int64) error {
 		V:          2,
 		Author:     cfg.Author,
 		Title:      cfg.Title,
-		Name:       fmt.Sprintf("%s_%d", cfg.BaseUUID, cfg.BaseID+counter),
+		Name:       fmt.Sprintf("d1ebe29f-f4e9-4572-83cd-8b2cdbfc2420_%d", cfg.BaseID+counter),
 	}
 	paintPath := filepath.Join(cfg.OutDir, tile.FileBase+".paint")
 	if err := writePaint(paintPath, nbtData); err != nil {
