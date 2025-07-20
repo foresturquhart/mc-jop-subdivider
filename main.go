@@ -48,9 +48,11 @@ var canvasTypes = []Canvas{
 
 // Tile represents a cropped sub-image to export.
 type Tile struct {
-	Img      image.Image
-	CT       byte
-	FileBase string
+	Img       image.Image
+	CT        byte
+	FileBase  string
+	TileIndex int
+	RowIndex  int
 }
 
 // nbtDataStruct defines the structure encoded into .paint files.
@@ -101,7 +103,7 @@ func run() error {
 			return fmt.Errorf("exporting tile %q: %w", tile.FileBase, err)
 		}
 		counter++
-		log.Printf("Exported %s", tile.FileBase)
+		log.Printf("Exported %s (\"%s X %d Y %d\" by %s)", tile.FileBase, cfg.Title, tile.RowIndex, tile.TileIndex, cfg.Author)
 	}
 	return nil
 }
@@ -216,10 +218,16 @@ func MakeTilePlan(img image.Image, rows, cols int, nameRoot string) ([]Tile, err
 			occ.Mark(r, c, sel.UnitsH, sel.UnitsW)
 			x0, y0 := c*16, r*16
 			sub := crop(img, x0, y0, sel.PxW, sel.PxH)
-			fileBase := fmt.Sprintf("%s_%d_%d", nameRoot, tileIndex, rowIndex)
-			tileIndex++
+			fileBase := fmt.Sprintf("%s_%d_%d", nameRoot, rowIndex, tileIndex)
+			tiles = append(tiles, Tile{
+				Img:       sub,
+				CT:        sel.CT,
+				FileBase:  fileBase,
+				TileIndex: tileIndex,
+				RowIndex:  rowIndex,
+			})
 			hasValidTileInRow = true
-			tiles = append(tiles, Tile{Img: sub, CT: sel.CT, FileBase: fileBase})
+			tileIndex++
 		}
 		if hasValidTileInRow {
 			rowIndex++
