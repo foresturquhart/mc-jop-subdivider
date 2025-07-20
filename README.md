@@ -38,8 +38,7 @@ go build -o mc-jop-subdivider
   -input "path/to/image.png" \
   -author "YourName" \
   -title "My Artwork" \
-  -out "output_directory" \
-  -uuid-base "custom-uuid-here"
+  -out "output_directory"
 ```
 
 ### Command Line Options
@@ -50,7 +49,6 @@ go build -o mc-jop-subdivider
 | `-author` | "Unknown" | Author name for .paint files |
 | `-title` | "Untitled" | Title for .paint files |
 | `-out` | "tiles" | Output directory for generated files |
-| `-uuid-base` | `d1ebe29f-f4e9-4572-83cd-8b2cdbfc2420` | Base UUID for paint names |
 
 ## Requirements
 
