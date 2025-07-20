@@ -186,8 +186,10 @@ func MakeTilePlan(img image.Image, rows, cols int, nameRoot string) ([]Tile, err
 	occ := NewOccGrid(rows, cols)
 	var tiles []Tile
 
+	rowIndex := 0
 	for r := range rows {
 		tileIndex := 0
+		hasValidTileInRow := false
 		for c := range cols {
 			if !occ.Empty(r, c, 1, 1) {
 				continue
@@ -214,9 +216,13 @@ func MakeTilePlan(img image.Image, rows, cols int, nameRoot string) ([]Tile, err
 			occ.Mark(r, c, sel.UnitsH, sel.UnitsW)
 			x0, y0 := c*16, r*16
 			sub := crop(img, x0, y0, sel.PxW, sel.PxH)
-			fileBase := fmt.Sprintf("%s_%d_%d", nameRoot, tileIndex, r)
+			fileBase := fmt.Sprintf("%s_%d_%d", nameRoot, tileIndex, rowIndex)
 			tileIndex++
+			hasValidTileInRow = true
 			tiles = append(tiles, Tile{Img: sub, CT: sel.CT, FileBase: fileBase})
+		}
+		if hasValidTileInRow {
+			rowIndex++
 		}
 	}
 
