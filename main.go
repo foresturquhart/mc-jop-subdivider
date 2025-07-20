@@ -74,13 +74,18 @@ func main() {
 		log.Fatalf("Failed to create output dir: %v", err)
 	}
 
-	// Prepare base UUID and ID counter
+	base := filepath.Base(*inputPath)
+	nameRoot := trimExt(base)
+
+	// Prepare base UUID and ID counter for .paint names
 	baseUUID := uuid.MustParse("d1ebe29f-f4e9-4572-83cd-8b2cdbfc2420").String()
 	baseID := time.Now().Unix()
 	counter := int64(0)
 
-	// Iterate over grid, greedy largest-first packing
+	// Iterate over grid rows
 	for r := 0; r < rows; r++ {
+		// Per-row tile index for naming
+		tileIndex := 0
 		for c := 0; c < cols; c++ {
 			if occ[r][c] {
 				continue
@@ -133,12 +138,13 @@ func main() {
 				}
 			}
 
-			// Crop and export subimage
+			// Crop subimage
 			x0, y0 := c*16, r*16
 			sub := crop(img, x0, y0, sel.wPx, sel.hPx)
 
-			base := filepath.Base(*inputPath)
-			nameBase := fmt.Sprintf("%s_%d_%d", trimExt(base), c, r)
+			// Name files by per-row index and row number
+			nameBase := fmt.Sprintf("%s_%d_%d", nameRoot, tileIndex, r)
+			tileIndex++
 
 			// Write BMP
 			bmpFile, _ := os.Create(filepath.Join(*outDir, nameBase+".bmp"))
@@ -174,7 +180,7 @@ func main() {
 			gw.Close()
 			pf.Close()
 
-			log.Printf("Exported %s (bmp + paint)", nameBase)
+			log.Printf("Exported %s", nameBase)
 		}
 	}
 }
